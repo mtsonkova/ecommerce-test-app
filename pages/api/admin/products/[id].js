@@ -13,7 +13,7 @@ async function handler(req, res) {
       if (name !== undefined) updateData.name = name;
       if (description !== undefined) updateData.description = description;
       if (price !== undefined) updateData.price = parseFloat(price);
-      if (stock !== undefined) updateData.stock = parseInt(stock);
+      if (stock !== undefined) updateData.stock = parseInt(stock, 10);
       if (categoryId !== undefined) updateData.categoryId = categoryId;
       if (discount !== undefined) updateData.discount = parseFloat(discount);
       if (imageUrl !== undefined) updateData.imageUrl = imageUrl;
@@ -21,9 +21,6 @@ async function handler(req, res) {
       const product = await prisma.product.update({
         where: { id },
         data: updateData,
-        include: {
-          category: true,
-        },
       });
 
       res.status(200).json({

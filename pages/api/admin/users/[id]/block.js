@@ -8,6 +8,7 @@ async function handler(req, res) {
 
   const { id } = req.query;
   const { isBlocked } = req.body;
+  const isBlockedBool = isBlocked === true || isBlocked === 'true';
 
   try {
     // Check if trying to block themselves
@@ -17,7 +18,7 @@ async function handler(req, res) {
 
     const user = await prisma.user.update({
       where: { id },
-      data: { isBlocked },
+      data: { isBlocked: isBlockedBool },
       select: {
         id: true,
         email: true,
@@ -29,7 +30,7 @@ async function handler(req, res) {
     });
 
     res.status(200).json({
-      message: `User ${isBlocked ? 'blocked' : 'unblocked'} successfully`,
+      message: `User ${isBlockedBool ? 'blocked' : 'unblocked'} successfully`,
       user,
     });
   } catch (error) {
