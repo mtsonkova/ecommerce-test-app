@@ -1,11 +1,15 @@
-import { prisma } from '../../../../../lib/prisma';
-import { requireAdmin } from '../../../../../lib/auth';
+import { prisma } from '../../../../lib/prisma';
+import { requireAdmin } from '../../../../lib/auth';
 
 async function handler(req, res) {
   const { id } = req.query;
 
+  // Guard: ensure id is present
+  if (!id) {
+    return res.status(400).json({ error: 'Product ID is required' });
+  }
+
   if (req.method === 'PUT') {
-    // Update product
     try {
       const { name, description, price, stock, categoryId, discount, imageUrl } = req.body;
 
@@ -18,23 +22,33 @@ async function handler(req, res) {
       if (discount !== undefined) updateData.discount = parseFloat(discount);
       if (imageUrl !== undefined) updateData.imageUrl = imageUrl;
 
+      // Guard: ensure there's something to update
+      if (Object.keys(updateData).length === 0) {
+        return res.status(400).json({ error: 'No valid fields provided for update' });
+      }
+
       const product = await prisma.product.update({
         where: { id },
         data: updateData,
       });
 
-      res.status(200).json({
+      return res.status(200).json({
         message: 'Product updated successfully',
         product,
       });
     } catch (error) {
       console.error('Update product error:', error);
-      res.status(500).json({ error: 'Internal server error' });
+
+      // Handle "record not found" specifically (Prisma P2025)
+      if (error.code === 'P2025') {
+        return res.status(404).json({ error: 'Product not found' });
+      }
+
+      return res.status(500).json({ error: 'Internal server error' });
     }
+
   } else if (req.method === 'DELETE') {
-    // Delete product
     try {
-      // Check if product is in any pending orders
       const ordersWithProduct = await prisma.orderItem.findMany({
         where: {
           productId: id,
@@ -47,8 +61,8 @@ async function handler(req, res) {
       });
 
       if (ordersWithProduct.length > 0) {
-        return res.status(400).json({ 
-          error: 'Cannot delete product with pending orders' 
+        return res.status(400).json({
+          error: 'Cannot delete product with pending orders',
         });
       }
 
@@ -56,13 +70,20 @@ async function handler(req, res) {
         where: { id },
       });
 
-      res.status(200).json({ message: 'Product deleted successfully' });
+      return res.status(200).json({ message: 'Product deleted successfully' });
     } catch (error) {
       console.error('Delete product error:', error);
-      res.status(500).json({ error: 'Internal server error' });
+
+      // Handle "record not found" specifically (Prisma P2025)
+      if (error.code === 'P2025') {
+        return res.status(404).json({ error: 'Product not found' });
+      }
+
+      return res.status(500).json({ error: 'Internal server error' });
     }
+
   } else {
-    res.status(405).json({ error: 'Method not allowed' });
+    return res.status(405).json({ error: 'Method not allowed' });
   }
 }
 
