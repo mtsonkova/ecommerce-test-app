@@ -12,6 +12,8 @@ export default function Products() {
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [showCart, setShowCart] = useState(false);
+  const [cartInputValues, setCartInputValues] = useState({});
+  const [cartErrors, setCartErrors] = useState({});
 
   useEffect(() => {
     fetchUser();
@@ -75,6 +77,14 @@ export default function Products() {
     let newCart;
 
     if (existingItem) {
+      if (existingItem.quantity >= product.stock) {
+        setCartErrors(prev => ({
+          ...prev,
+          [product.id]: `Only ${product.stock} in stock`,
+        }));
+        setShowCart(true);
+        return;
+      }
       newCart = cart.map(item =>
         item.id === product.id
           ? { ...item, quantity: item.quantity + 1 }
@@ -84,19 +94,58 @@ export default function Products() {
       newCart = [...cart, { ...product, quantity: 1 }];
     }
 
+    setCartErrors(prev => { const e = { ...prev }; delete e[product.id]; return e; });
     saveCart(newCart);
     setShowCart(true);
   };
 
   const updateQuantity = (productId, change) => {
-    const newCart = cart.map(item => {
-      if (item.id === productId) {
-        const newQuantity = item.quantity + change;
-        return newQuantity > 0 ? { ...item, quantity: newQuantity } : null;
-      }
-      return item;
-    }).filter(Boolean);
+    const item = cart.find(i => i.id === productId);
+    if (!item) return;
+    const newQuantity = item.quantity + change;
+    if (newQuantity <= 0) {
+      removeFromCart(productId);
+      return;
+    }
+    if (newQuantity > item.stock) {
+      setCartErrors(prev => ({
+        ...prev,
+        [productId]: `Only ${item.stock} in stock`,
+      }));
+      return;
+    }
+    setCartErrors(prev => { const e = { ...prev }; delete e[productId]; return e; });
+    const newCart = cart.map(i =>
+      i.id === productId ? { ...i, quantity: newQuantity } : i
+    );
+    saveCart(newCart);
+  };
 
+  const updateQuantityDirect = (productId, rawValue) => {
+    const parsed = parseInt(rawValue, 10);
+    const item = cart.find(i => i.id === productId);
+    if (!item) return;
+
+    if (rawValue === '' || isNaN(parsed) || parsed < 1) {
+      setCartErrors(prev => ({
+        ...prev,
+        [productId]: 'Please enter a valid quantity (min 1)',
+      }));
+      return;
+    }
+
+    if (parsed > item.stock) {
+      setCartErrors(prev => ({
+        ...prev,
+        [productId]: `Only ${item.stock} in stock — cannot add ${parsed}`,
+      }));
+      return;
+    }
+
+    setCartErrors(prev => { const e = { ...prev }; delete e[productId]; return e; });
+    const newCart = cart.map(i =>
+      i.id === productId ? { ...i, quantity: parsed } : i
+    );
     saveCart(newCart);
   };
 
@@ -305,14 +354,37 @@ export default function Products() {
                           <div className="flex items-center space-x-2 mt-1">
                             <button
                               onClick={() => updateQuantity(item.id, -1)}
-                              className="w-6 h-6 bg-gray-200 rounded hover:bg-gray-300"
+                              className="w-6 h-6 bg-gray-200 rounded hover:bg-gray-300 font-bold text-sm flex items-center justify-center"
                             >
                               -
                             </button>
-                            <span className="text-sm">{item.quantity}</span>
+                            <input
+                              type="text"
+                              inputMode="numeric"
+                              pattern="[0-9]*"
+                              value={cartInputValues[item.id] !== undefined ? cartInputValues[item.id] : item.quantity}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                if (/^\d*$/.test(val)) {
+                                  setCartInputValues(prev => ({ ...prev, [item.id]: val }));
+                                  if (val !== '') updateQuantityDirect(item.id, val);
+                                }
+                              }}
+                              onBlur={(e) => {
+                                const val = e.target.value;
+                                if (val === '' || parseInt(val, 10) < 1) {
+                                  setCartInputValues(prev => { const v = { ...prev }; delete v[item.id]; return v; });
+                                  setCartErrors(prev => { const e = { ...prev }; delete e[item.id]; return e; });
+                                } else {
+                                  setCartInputValues(prev => { const v = { ...prev }; delete v[item.id]; return v; });
+                                }
+                              }}
+                              className={`w-12 text-center text-sm border rounded px-1 py-0.5 focus:outline-none focus:ring-1 ${cartErrors[item.id] ? 'border-red-400 bg-red-50 focus:ring-red-400' : 'border-gray-300 focus:ring-indigo-400'}`}
+                            />
                             <button
                               onClick={() => updateQuantity(item.id, 1)}
-                              className="w-6 h-6 bg-gray-200 rounded hover:bg-gray-300"
+                              disabled={item.quantity >= item.stock}
+                              className="w-6 h-6 bg-gray-200 rounded hover:bg-gray-300 font-bold text-sm flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed"
                             >
                               +
                             </button>
@@ -323,6 +395,11 @@ export default function Products() {
                               Remove
                             </button>
                           </div>
+                          {cartErrors[item.id] && (
+                            <p className="text-xs text-red-600 mt-1 flex items-center gap-1">
+                              <span>⚠️</span> {cartErrors[item.id]}
+                            </p>
+                          )}
                         </div>
                       </div>
                     ))}
@@ -336,15 +413,33 @@ export default function Products() {
                   </div>
 
                   {user ? (
-                    <button
-                      onClick={() => {
-                        setShowCart(false);
-                        router.push('/checkout');
-                      }}
-                      className="w-full bg-indigo-600 text-white py-3 rounded-md hover:bg-indigo-700 font-semibold"
-                    >
-                      Proceed to Checkout
-                    </button>
+                    <>
+                      {Object.keys(cartErrors).length > 0 && (
+                        <div className="mb-3 bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded text-sm">
+                          ⚠️ Please fix quantity errors above before checking out.
+                        </div>
+                      )}
+                      <button
+                        onClick={() => {
+                          // Final stock check before navigating
+                          const violations = cart.filter(item => item.quantity > item.stock);
+                          if (violations.length > 0) {
+                            const msgs = {};
+                            violations.forEach(item => {
+                              msgs[item.id] = `Only ${item.stock} in stock`;
+                            });
+                            setCartErrors(prev => ({ ...prev, ...msgs }));
+                            return;
+                          }
+                          setShowCart(false);
+                          router.push('/checkout');
+                        }}
+                        disabled={Object.keys(cartErrors).length > 0}
+                        className="w-full bg-indigo-600 text-white py-3 rounded-md hover:bg-indigo-700 font-semibold disabled:bg-gray-400 disabled:cursor-not-allowed"
+                      >
+                        Proceed to Checkout
+                      </button>
+                    </>
                   ) : (
                     <div className="text-center">
                       <p className="text-gray-600 mb-4">Please login to checkout</p>
